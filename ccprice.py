@@ -52,8 +52,11 @@ def classify_model(model_id: str) -> str | None:
     return None
 
 
-def parse_period(period: str) -> datetime | None:
-    """Parse a time period string and return the cutoff datetime (UTC).
+def parse_period(period: str) -> tuple[datetime, datetime | None] | None:
+    """Parse a time period string and return (since, until) datetimes (UTC).
+
+    Returns a tuple of (since, until). until is None for open-ended ranges.
+    Returns None if the period string is invalid.
 
     Supported formats:
       today, yesterday, week, month, year,
@@ -64,15 +67,15 @@ def parse_period(period: str) -> datetime | None:
     p = period.lower().strip()
 
     if p == "today":
-        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return (now.replace(hour=0, minute=0, second=0, microsecond=0), None)
     if p == "yesterday":
-        return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return ((now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0), None)
     if p == "week":
-        return now - timedelta(weeks=1)
+        return (now - timedelta(weeks=1), None)
     if p == "month":
-        return now - timedelta(days=30)
+        return (now - timedelta(days=30), None)
     if p == "year":
-        return now - timedelta(days=365)
+        return (now - timedelta(days=365), None)
 
     # Nd, Nw, Nm patterns
     m = re.match(r"^(\d+)([dwm])$", p)
@@ -80,16 +83,48 @@ def parse_period(period: str) -> datetime | None:
         n = int(m.group(1))
         unit = m.group(2)
         if unit == "d":
-            return now - timedelta(days=n)
+            return (now - timedelta(days=n), None)
         if unit == "w":
-            return now - timedelta(weeks=n)
+            return (now - timedelta(weeks=n), None)
         if unit == "m":
-            return now - timedelta(days=n * 30)
+            return (now - timedelta(days=n * 30), None)
 
     # YYYY-MM-DD
     m = re.match(r"^\d{4}-\d{2}-\d{2}$", p)
     if m:
-        return datetime.fromisoformat(p).replace(tzinfo=timezone.utc)
+        return (datetime.fromisoformat(p).replace(tzinfo=timezone.utc), None)
+
+    return None
+
+
+def parse_at(period: str) -> tuple[datetime, datetime | None] | None:
+    """Parse a calendar-based window and return (since, until) datetimes (UTC).
+
+    Unlike parse_period which counts backwards from now, parse_at uses
+    real calendar boundaries:
+      today/day:   today 00:00 ~ now
+      yesterday:   yesterday 00:00 ~ today 00:00
+      week:        Sunday 00:00 of this week ~ now
+      month:       1st of this month 00:00 ~ now
+    """
+    now = datetime.now(timezone.utc)
+    p = period.lower().strip()
+
+    if p in ("today", "day"):
+        return (now.replace(hour=0, minute=0, second=0, microsecond=0), None)
+    if p == "yesterday":
+        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return (start, end)
+    if p == "week":
+        # Start from Sunday (weekday: Mon=0, Sun=6)
+        days_since_sunday = (now.weekday() + 1) % 7
+        sunday = (now - timedelta(days=days_since_sunday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return (sunday, None)
+    if p == "month":
+        return (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0), None)
 
     return None
 
@@ -153,6 +188,7 @@ def prettify_project_name(dirname: str) -> str:
 def scan_projects(
     projects_dir: str,
     since: datetime | None = None,
+    until: datetime | None = None,
     model_filter: str | None = None,
 ) -> list[dict]:
     results = []
@@ -187,10 +223,13 @@ def scan_projects(
                             continue
 
                         # Time filter
-                        if since:
+                        if since or until:
                             ts = parse_timestamp(rec.get("timestamp") or rec.get("ts", ""))
-                            if ts and ts < since:
-                                continue
+                            if ts:
+                                if since and ts < since:
+                                    continue
+                                if until and ts >= until:
+                                    continue
 
                         msg = rec.get("message", {})
                         model = msg.get("model", "")
@@ -414,8 +453,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Claude Code session usage & cost calculator",
         epilog=(
-            "period examples: today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01\n"
-            "model examples:  opus, sonnet, haiku, other, gemini"
+            "period examples (--since/--until): today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01\n"
+            "calendar windows (--at):          today/day, yesterday, week (from Sunday), month (from 1st)\n"
+            "model examples:                   opus, sonnet, haiku, other, gemini"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -423,7 +463,18 @@ def main():
     parser.add_argument(
         "--since", "-s",
         metavar="PERIOD",
-        help="Filter by time period (today, yesterday, week, month, year, Nd, Nw, Nm, YYYY-MM-DD)",
+        default="week",
+        help="Filter by time period (default: week) (today, yesterday, week, month, year, Nd, Nw, Nm, YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--until", "-u",
+        metavar="PERIOD",
+        help="End of time window (today, yesterday, week, month, year, Nd, Nw, Nm, YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--at", "-a",
+        metavar="WINDOW",
+        help="Calendar window (today/day, yesterday, week, month). Overrides --since/--until.",
     )
     parser.add_argument(
         "--model", "-m",
@@ -442,14 +493,33 @@ def main():
         sys.exit(1)
 
     since = None
-    if args.since:
-        since = parse_period(args.since)
-        if since is None:
-            print(f"Invalid period: {args.since}", file=sys.stderr)
-            print("Examples: today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01", file=sys.stderr)
-            sys.exit(1)
+    until = None
 
-    results = scan_projects(args.projects_dir, since=since, model_filter=args.model)
+    if getattr(args, "at", None):
+        parsed = parse_at(args.at)
+        if parsed is None:
+            print(f"Invalid calendar window: {args.at}", file=sys.stderr)
+            print("Examples: today, day, yesterday, week, month", file=sys.stderr)
+            sys.exit(1)
+        since, until = parsed
+    else:
+        if args.since:
+            parsed = parse_period(args.since)
+            if parsed is None:
+                print(f"Invalid period: {args.since}", file=sys.stderr)
+                print("Examples: today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01", file=sys.stderr)
+                sys.exit(1)
+            since, until = parsed
+
+        if args.until:
+            parsed = parse_period(args.until)
+            if parsed is None:
+                print(f"Invalid until period: {args.until}", file=sys.stderr)
+                sys.exit(1)
+            # Use the start of the parsed period as the upper bound
+            until = parsed[0]
+
+    results = scan_projects(args.projects_dir, since=since, until=until, model_filter=args.model)
 
     if not results:
         print("No projects with usage data found.")
@@ -457,10 +527,18 @@ def main():
 
     # Build filter label
     filters = []
-    if args.since:
-        filters.append(f"since: {args.since}")
+    if since or until:
+        time_parts = []
         if since:
-            filters.append(f"({since.strftime('%Y-%m-%d %H:%M')} UTC)")
+            time_parts.append(since.strftime('%Y-%m-%d %H:%M'))
+        else:
+            time_parts.append("...")
+        time_parts.append("~")
+        if until:
+            time_parts.append(until.strftime('%Y-%m-%d %H:%M'))
+        else:
+            time_parts.append("now")
+        filters.append(f"({' '.join(time_parts)} UTC)")
     if args.model:
         filters.append(f"model: {args.model}")
     filter_label = "  ".join(filters)

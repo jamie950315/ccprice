@@ -32,7 +32,7 @@ Output is color-coded by cost: bright red ≥$500, red ≥$250, bright yellow �
 - **Auto-discovery** — scans all projects under `~/.claude/projects/`; new projects are picked up automatically
 - **Anthropic-only pricing** — calculates equivalent costs for Opus, Sonnet, and Haiku; other providers show token counts only
 - **Per-tier breakdown** — input, output, cache read, and cache write tokens with individual costs
-- **Time filtering** — filter by day, week, month, or any custom period
+- **Time filtering** — `--since`/`--until` for rolling windows, `--at` for calendar-based windows
 - **Model filtering** — filter by Anthropic tier or substring match on any model ID
 - **Color-coded output** — red / yellow / green based on cost thresholds
 - **Adaptive layout** — column widths adjust to terminal size; long project names are truncated
@@ -68,22 +68,42 @@ chmod +x ~/.local/bin/ccprice
 ## Usage
 
 ```bash
-ccprice                    # all projects, all time
+ccprice                    # default: last 7 days (--since week)
 ccprice --json             # JSON output
 ```
 
-### Filter by Time (`--since` / `-s`)
+### Filter by Time (`--since` / `-s` and `--until` / `-u`)
+
+Rolling windows that count backwards from now:
 
 ```bash
-ccprice -s today           # today only
-ccprice -s yesterday       # since yesterday
-ccprice -s week            # last 7 days
+ccprice -s today           # since today 00:00
+ccprice -s yesterday       # since yesterday 00:00
+ccprice -s week            # last 7 days (default)
 ccprice -s month           # last 30 days
 ccprice -s year            # last 365 days
 ccprice -s 3d              # last 3 days
 ccprice -s 2w              # last 2 weeks
 ccprice -s 6m              # last 6 months (6 × 30 days)
 ccprice -s 2026-03-01      # since a specific date
+```
+
+Use `--until` to set an end boundary:
+
+```bash
+ccprice -s 2026-03-01 -u 2026-03-08   # Mar 1 ~ Mar 8
+ccprice -s month -u week               # 30 days ago ~ 7 days ago
+```
+
+### Calendar Windows (`--at` / `-a`)
+
+Fixed calendar-based windows (overrides `--since`/`--until`):
+
+```bash
+ccprice -a today           # today 00:00 ~ now (alias: day)
+ccprice -a yesterday       # yesterday 00:00 ~ today 00:00
+ccprice -a week            # Sunday 00:00 ~ now (current calendar week)
+ccprice -a month           # 1st of month 00:00 ~ now (current calendar month)
 ```
 
 ### Filter by Model (`--model` / `-m`)
@@ -100,7 +120,7 @@ ccprice -m gemini          # substring match on model ID
 
 ```bash
 ccprice -s week -m opus    # Opus usage in the last week
-ccprice -s today --json    # today's usage as JSON
+ccprice -a today --json    # today's calendar window as JSON
 ```
 
 ### Other Options

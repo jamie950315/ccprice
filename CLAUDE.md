@@ -9,8 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running
 
 ```bash
-python3 ccprice.py                     # basic usage
-python3 ccprice.py --since week        # time filter (today/yesterday/week/month/year/Nd/Nw/Nm/YYYY-MM-DD)
+python3 ccprice.py                     # default: last 7 days (--since week)
+python3 ccprice.py --since week        # rolling window (today/yesterday/week/month/year/Nd/Nw/Nm/YYYY-MM-DD)
+python3 ccprice.py --until 2026-03-08  # end boundary for --since
+python3 ccprice.py --at today          # calendar window (today/day/yesterday/week/month)
 python3 ccprice.py --model opus        # model filter (opus/sonnet/haiku/other or substring)
 python3 ccprice.py --json              # machine-readable output
 ```
@@ -22,7 +24,7 @@ No external dependencies — stdlib only (Python 3.10+).
 Everything lives in `ccprice.py` (~466 lines). Key flow:
 
 1. **`main()`** — argparse CLI entry point
-2. **`scan_projects()`** — walks `~/.claude/projects/*/` reading `.jsonl` files, extracts `assistant` message usage records, applies time/model filters, accumulates per-tier token counts
+2. **`scan_projects()`** — walks `~/.claude/projects/*/` reading `.jsonl` files, extracts `assistant` message usage records, applies time/model filters (since/until), accumulates per-tier token counts
 3. **`classify_model()`** — maps model IDs to pricing tiers (opus/sonnet/haiku) via `MODEL_PATTERNS`; skips non-Anthropic models
 4. **`calc_cost()`** — computes API-equivalent cost from token counts × `ANTHROPIC_PRICING` rates
 5. **`print_summary()` / `print_json()`** — output formatting with 6-tier color-coded cost thresholds (bright red ≥$500, red ≥$250, bright yellow ≥$100, yellow ≥$50, green ≥$25, bright green <$25)
