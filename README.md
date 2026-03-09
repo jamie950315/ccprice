@@ -144,7 +144,3 @@ ccprice --help             # full usage info
 - If you're on a **Claude Pro/Max subscription**, the cost shown is the **equivalent API price**, not your actual bill. Useful for understanding resource consumption and comparing against subscription value.
 - Token data comes from locally stored session transcripts. Deleting `~/.claude/projects/` removes the history.
 - Non-Anthropic models (Gemini, GPT, etc.) are listed under "Other" as token counts without cost calculation.
-
-## License
-
-MIT
