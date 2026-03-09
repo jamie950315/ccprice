@@ -8,6 +8,7 @@ import sys
 import glob
 import argparse
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 # Anthropic pricing (USD per 1M tokens)
 ANTHROPIC_PRICING = {
@@ -49,6 +50,59 @@ def classify_model(model_id: str) -> str | None:
         if any(kw in mid for kw in keywords):
             return tier
     return None
+
+
+def parse_period(period: str) -> datetime | None:
+    """Parse a time period string and return the cutoff datetime (UTC).
+
+    Supported formats:
+      today, yesterday, week, month, year,
+      Nd (N days), Nw (N weeks), Nm (N months),
+      YYYY-MM-DD (specific date)
+    """
+    now = datetime.now(timezone.utc)
+    p = period.lower().strip()
+
+    if p == "today":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if p == "yesterday":
+        return (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    if p == "week":
+        return now - timedelta(weeks=1)
+    if p == "month":
+        return now - timedelta(days=30)
+    if p == "year":
+        return now - timedelta(days=365)
+
+    # Nd, Nw, Nm patterns
+    m = re.match(r"^(\d+)([dwm])$", p)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        if unit == "d":
+            return now - timedelta(days=n)
+        if unit == "w":
+            return now - timedelta(weeks=n)
+        if unit == "m":
+            return now - timedelta(days=n * 30)
+
+    # YYYY-MM-DD
+    m = re.match(r"^\d{4}-\d{2}-\d{2}$", p)
+    if m:
+        return datetime.fromisoformat(p).replace(tzinfo=timezone.utc)
+
+    return None
+
+
+def parse_timestamp(ts: str) -> datetime | None:
+    """Parse an ISO 8601 timestamp from session records."""
+    if not ts:
+        return None
+    try:
+        ts = ts.rstrip("Z") + "+00:00" if ts.endswith("Z") else ts
+        return datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        return None
 
 
 def calc_cost(tier: str, input_t: int, output_t: int, cache_read: int, cache_write: int) -> float:
@@ -96,7 +150,11 @@ def prettify_project_name(dirname: str) -> str:
     return name
 
 
-def scan_projects(projects_dir: str) -> list[dict]:
+def scan_projects(
+    projects_dir: str,
+    since: datetime | None = None,
+    model_filter: str | None = None,
+) -> list[dict]:
     results = []
 
     for project_dir in sorted(glob.glob(os.path.join(projects_dir, "*"))):
@@ -128,6 +186,12 @@ def scan_projects(projects_dir: str) -> list[dict]:
                         if rec.get("type") != "assistant":
                             continue
 
+                        # Time filter
+                        if since:
+                            ts = parse_timestamp(rec.get("timestamp") or rec.get("ts", ""))
+                            if ts and ts < since:
+                                continue
+
                         msg = rec.get("message", {})
                         model = msg.get("model", "")
                         usage = msg.get("usage", {})
@@ -142,10 +206,24 @@ def scan_projects(projects_dir: str) -> list[dict]:
                         if inp == 0 and out == 0:
                             continue
 
+                        tier = classify_model(model) if model else None
+
+                        # Model filter
+                        if model_filter:
+                            mf = model_filter.lower()
+                            if mf in ("opus", "sonnet", "haiku"):
+                                if tier != mf:
+                                    continue
+                            elif mf == "other":
+                                if tier is not None:
+                                    continue
+                            else:
+                                if model and mf not in model.lower():
+                                    continue
+
                         if model:
                             model_set.add(model)
 
-                        tier = classify_model(model) if model else None
                         if tier:
                             tier_usage[tier]["input"] += inp
                             tier_usage[tier]["output"] += out
@@ -214,7 +292,7 @@ def get_terminal_width() -> int:
         return 100
 
 
-def print_summary(results: list[dict]):
+def print_summary(results: list[dict], filter_label: str = ""):
     """Print formatted summary table."""
     c_cyan = "\033[36m"
     c_green = "\033[32m"
@@ -238,6 +316,8 @@ def print_summary(results: list[dict]):
     total_w = name_w + right_cols + 4
 
     print(f"\n{c_bold}Claude Code Usage Summary{c_reset}")
+    if filter_label:
+        print(f"  {c_dim}{filter_label}{c_reset}")
     print(f"{c_dim}{'─' * total_w}{c_reset}\n")
 
     header = (
@@ -322,8 +402,25 @@ def print_json(results: list[dict]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Claude Code session usage & cost calculator")
+    parser = argparse.ArgumentParser(
+        description="Claude Code session usage & cost calculator",
+        epilog=(
+            "period examples: today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01\n"
+            "model examples:  opus, sonnet, haiku, other, gemini"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--since", "-s",
+        metavar="PERIOD",
+        help="Filter by time period (today, yesterday, week, month, year, Nd, Nw, Nm, YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--model", "-m",
+        metavar="MODEL",
+        help="Filter by model (opus, sonnet, haiku, other, or substring match)",
+    )
     parser.add_argument(
         "--projects-dir",
         default=os.path.expanduser("~/.claude/projects"),
@@ -335,16 +432,34 @@ def main():
         print(f"Projects directory not found: {args.projects_dir}", file=sys.stderr)
         sys.exit(1)
 
-    results = scan_projects(args.projects_dir)
+    since = None
+    if args.since:
+        since = parse_period(args.since)
+        if since is None:
+            print(f"Invalid period: {args.since}", file=sys.stderr)
+            print("Examples: today, yesterday, week, month, year, 3d, 2w, 6m, 2026-03-01", file=sys.stderr)
+            sys.exit(1)
+
+    results = scan_projects(args.projects_dir, since=since, model_filter=args.model)
 
     if not results:
         print("No projects with usage data found.")
         return
 
+    # Build filter label
+    filters = []
+    if args.since:
+        filters.append(f"since: {args.since}")
+        if since:
+            filters.append(f"({since.strftime('%Y-%m-%d %H:%M')} UTC)")
+    if args.model:
+        filters.append(f"model: {args.model}")
+    filter_label = "  ".join(filters)
+
     if args.json:
         print_json(results)
     else:
-        print_summary(results)
+        print_summary(results, filter_label)
 
 
 if __name__ == "__main__":
