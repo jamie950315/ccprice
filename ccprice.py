@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Claude Code 專案用量統計與 Anthropic 模型等效費用計算"""
+"""Scan Claude Code session history and calculate equivalent Anthropic API costs."""
 
 import json
 import os
+import re
 import sys
 import glob
 import argparse
 from collections import defaultdict
 
-# Anthropic 模型定價 (USD per 1M tokens)
+# Anthropic pricing (USD per 1M tokens)
 ANTHROPIC_PRICING = {
     "opus": {
         "input": 15.0,
@@ -30,7 +31,7 @@ ANTHROPIC_PRICING = {
     },
 }
 
-# 模型 ID → 定價類別
+# Model ID → pricing tier
 MODEL_PATTERNS = {
     "opus": ["opus"],
     "sonnet": ["sonnet"],
@@ -39,9 +40,8 @@ MODEL_PATTERNS = {
 
 
 def classify_model(model_id: str) -> str | None:
-    """將模型 ID 分類為 opus/sonnet/haiku，非 Anthropic 模型回傳 None"""
+    """Classify model ID as opus/sonnet/haiku. Returns None for non-Anthropic models."""
     mid = model_id.lower()
-    # 排除非 Anthropic 模型
     non_anthropic = ["google/", "gemini", "openai/", "gpt", "minimax/", "<synthetic>"]
     if any(prefix in mid for prefix in non_anthropic):
         return None
@@ -52,7 +52,7 @@ def classify_model(model_id: str) -> str | None:
 
 
 def calc_cost(tier: str, input_t: int, output_t: int, cache_read: int, cache_write: int) -> float:
-    """計算等效 API 費用"""
+    """Calculate equivalent API cost."""
     p = ANTHROPIC_PRICING[tier]
     return (
         input_t * p["input"]
@@ -81,17 +81,15 @@ def fmt_cost(c: float) -> str:
 
 
 def prettify_project_name(dirname: str) -> str:
-    """將目錄名稱轉為可讀的專案名稱"""
+    """Convert directory name to a readable project name."""
     name = dirname
-    # 移除 home 路徑前綴
-    home_prefixes = ["-Users-jamie-", "-Users-jamie"]
-    for prefix in home_prefixes:
-        if name.startswith(prefix):
-            name = name[len(prefix):]
-            break
+    # Strip home path prefix (matches common patterns like -Users-xxx- or -home-xxx-)
+    m = re.match(r"^-(?:Users|home)-[^-]+-?", name)
+    if m:
+        name = name[m.end():]
     if not name:
         name = "~ (home)"
-    # 將 ---- 還原為 /../../
+    # Restore path separators
     name = name.replace("----", "/../../")
     name = name.replace("---", "/../")
     name = name.replace("--", "/../")
@@ -159,7 +157,7 @@ def scan_projects(projects_dir: str) -> list[dict]:
             except Exception:
                 pass
 
-        # 計算 Anthropic 總 token 與費用
+        # Calculate Anthropic totals and costs
         total_anthropic_tokens = 0
         total_cost = 0.0
         tier_details = []
@@ -203,7 +201,7 @@ def scan_projects(projects_dir: str) -> list[dict]:
 
 
 def truncate(s: str, width: int) -> str:
-    """截斷字串並加省略號，確保不超過指定寬度"""
+    """Truncate string to fit within given width."""
     if len(s) <= width:
         return s
     return s[: width - 2] + ".."
@@ -217,7 +215,7 @@ def get_terminal_width() -> int:
 
 
 def print_summary(results: list[dict]):
-    """輸出摘要表格"""
+    """Print formatted summary table."""
     c_cyan = "\033[36m"
     c_green = "\033[32m"
     c_yellow = "\033[33m"
@@ -226,28 +224,28 @@ def print_summary(results: list[dict]):
     c_bold = "\033[1m"
     c_reset = "\033[0m"
 
-    # 固定欄位寬度
+    # Fixed column widths
     col_sess = 10
     col_anth = 12
     col_other = 10
     col_cost = 12
     right_cols = col_sess + col_anth + col_other + col_cost + 4  # +4 for spacing
 
-    # 動態計算專案名稱欄寬：取終端寬度扣掉右側欄位，但限制在 20~50 之間
+    # Dynamic project name column width based on terminal size (clamped 20~50)
     term_w = get_terminal_width()
     name_w = max(20, min(50, term_w - right_cols - 4))  # -4 for left padding
 
     total_w = name_w + right_cols + 4
 
-    print(f"\n{c_bold}Claude Code 專案用量統計{c_reset}")
+    print(f"\n{c_bold}Claude Code Usage Summary{c_reset}")
     print(f"{c_dim}{'─' * total_w}{c_reset}\n")
 
     header = (
-        f"  {'專案':<{name_w}}"
+        f"  {'Project':<{name_w}}"
         f" {'Sessions':>{col_sess}}"
         f" {'Anthropic':>{col_anth}}"
-        f" {'其他':>{col_other}}"
-        f" {'等效費用':>{col_cost}}"
+        f" {'Other':>{col_other}}"
+        f" {'Est. Cost':>{col_cost}}"
     )
     print(f"{c_bold}{header}{c_reset}")
     print(f"  {'─' * (total_w - 2)}")
@@ -275,10 +273,9 @@ def print_summary(results: list[dict]):
             f" {cost_color}{fmt_cost(r['anthropic_cost']):>{col_cost}}{c_reset}"
         )
 
-        # 顯示各 tier 明細
+        # Tier breakdown
         for td in r["tier_details"]:
             tier_label = td["tier"].capitalize()
-            # 明細行：左邊對齊到專案名稱欄內，右邊費用對齊到等效費用欄
             detail = (
                 f"in:{fmt_tokens(td['input'])} "
                 f"out:{fmt_tokens(td['output'])} "
@@ -286,7 +283,7 @@ def print_summary(results: list[dict]):
                 f"cW:{fmt_tokens(td['cache_write'])}"
             )
             left_part = f"  └ {tier_label:<8} {detail}"
-            # 計算需要填充的寬度讓費用靠右對齊
+            # Pad to right-align cost
             pad = total_w - len(left_part) - 2  # -2 for leading spaces
             if pad < 1:
                 pad = 1
@@ -312,7 +309,7 @@ def print_summary(results: list[dict]):
 
 
 def print_json(results: list[dict]):
-    """輸出 JSON 格式"""
+    """Print JSON output."""
     output = {
         "projects": results,
         "grand_total": {
@@ -325,23 +322,23 @@ def print_json(results: list[dict]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Claude Code 專案用量統計")
-    parser.add_argument("--json", action="store_true", help="輸出 JSON 格式")
+    parser = argparse.ArgumentParser(description="Claude Code session usage & cost calculator")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument(
         "--projects-dir",
         default=os.path.expanduser("~/.claude/projects"),
-        help="專案目錄路徑 (預設: ~/.claude/projects)",
+        help="Projects directory (default: ~/.claude/projects)",
     )
     args = parser.parse_args()
 
     if not os.path.isdir(args.projects_dir):
-        print(f"找不到專案目錄: {args.projects_dir}", file=sys.stderr)
+        print(f"Projects directory not found: {args.projects_dir}", file=sys.stderr)
         sys.exit(1)
 
     results = scan_projects(args.projects_dir)
 
     if not results:
-        print("沒有找到任何有用量記錄的專案。")
+        print("No projects with usage data found.")
         return
 
     if args.json:
