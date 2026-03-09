@@ -32,6 +32,8 @@ Output is color-coded: costs >= $10 in red, >= $1 in yellow, < $1 in green.
 - **Auto-discovery** — scans all projects under `~/.claude/projects/`; new projects are picked up automatically
 - **Anthropic-only pricing** — calculates equivalent costs for Opus, Sonnet, and Haiku; other providers show token counts only
 - **Per-tier breakdown** — input, output, cache read, and cache write tokens with individual costs
+- **Time filtering** — filter by day, week, month, or any custom period
+- **Model filtering** — filter by Anthropic tier or substring match on any model ID
 - **Color-coded output** — red / yellow / green based on cost thresholds
 - **Adaptive layout** — column widths adjust to terminal size; long project names are truncated
 - **JSON output** — `--json` for machine-readable output
@@ -66,9 +68,46 @@ chmod +x ~/.local/bin/ccprice
 ## Usage
 
 ```bash
-ccprice              # formatted table
-ccprice --json       # JSON output
-ccprice --projects-dir /path/to/.claude/projects  # custom path
+ccprice                    # all projects, all time
+ccprice --json             # JSON output
+```
+
+### Filter by Time (`--since` / `-s`)
+
+```bash
+ccprice -s today           # today only
+ccprice -s yesterday       # since yesterday
+ccprice -s week            # last 7 days
+ccprice -s month           # last 30 days
+ccprice -s year            # last 365 days
+ccprice -s 3d              # last 3 days
+ccprice -s 2w              # last 2 weeks
+ccprice -s 6m              # last 6 months (6 × 30 days)
+ccprice -s 2026-03-01      # since a specific date
+```
+
+### Filter by Model (`--model` / `-m`)
+
+```bash
+ccprice -m opus            # Opus only
+ccprice -m sonnet          # Sonnet only
+ccprice -m haiku           # Haiku only
+ccprice -m other           # non-Anthropic models only
+ccprice -m gemini          # substring match on model ID
+```
+
+### Combine Filters
+
+```bash
+ccprice -s week -m opus    # Opus usage in the last week
+ccprice -s today --json    # today's usage as JSON
+```
+
+### Other Options
+
+```bash
+ccprice --projects-dir /path/to/.claude/projects  # custom projects path
+ccprice --help             # full usage info
 ```
 
 ## How It Works
