@@ -25,7 +25,7 @@ Claude Code Usage Summary
   TOTAL                                           72.5M       6.1M     $128.09
 ```
 
-Output is color-coded: costs >= $10 in red, >= $1 in yellow, < $1 in green.
+Output is color-coded by cost: bright red ≥$500, red ≥$250, bright yellow ≥$100, yellow ≥$50, green ≥$25, bright green <$25.
 
 ## Features
 

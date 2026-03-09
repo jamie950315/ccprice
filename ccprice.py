@@ -295,12 +295,28 @@ def get_terminal_width() -> int:
 def print_summary(results: list[dict], filter_label: str = ""):
     """Print formatted summary table."""
     c_cyan = "\033[36m"
+    c_bright_green = "\033[92m"
     c_green = "\033[32m"
     c_yellow = "\033[33m"
+    c_bright_yellow = "\033[93m"
     c_red = "\033[31m"
+    c_bright_red = "\033[91m"
     c_dim = "\033[2m"
     c_bold = "\033[1m"
     c_reset = "\033[0m"
+
+    def cost_color(cost):
+        if cost >= 500:
+            return c_bright_red
+        if cost >= 250:
+            return c_red
+        if cost >= 100:
+            return c_bright_yellow
+        if cost >= 50:
+            return c_yellow
+        if cost >= 25:
+            return c_green
+        return c_bright_green
 
     # Fixed column widths
     col_sess = 10
@@ -336,13 +352,6 @@ def print_summary(results: list[dict], filter_label: str = ""):
 
     for r in results:
         cost = r["anthropic_cost"]
-        if cost >= 10:
-            cost_color = c_red
-        elif cost >= 1:
-            cost_color = c_yellow
-        else:
-            cost_color = c_green
-
         proj_name = truncate(r["project"], name_w)
         other_total = r["other_input"] + r["other_output"]
         print(
@@ -350,7 +359,7 @@ def print_summary(results: list[dict], filter_label: str = ""):
             f" {r['sessions']:>{col_sess}}"
             f" {fmt_tokens(r['anthropic_tokens']):>{col_anth}}"
             f" {fmt_tokens(other_total):>{col_other}}"
-            f" {cost_color}{fmt_cost(r['anthropic_cost']):>{col_cost}}{c_reset}"
+            f" {cost_color(cost)}{fmt_cost(r['anthropic_cost']):>{col_cost}}{c_reset}"
         )
 
         # Tier breakdown
@@ -377,13 +386,13 @@ def print_summary(results: list[dict], filter_label: str = ""):
 
     print(f"  {'─' * (total_w - 2)}")
 
-    cost_color = c_red if grand_cost >= 10 else c_yellow if grand_cost >= 1 else c_green
+    total_color = cost_color(grand_cost)
     print(
         f"  {c_bold}{'TOTAL':<{name_w}}{c_reset}"
         f" {'':>{col_sess}}"
         f" {c_bold}{fmt_tokens(grand_anthropic):>{col_anth}}{c_reset}"
         f" {fmt_tokens(grand_other):>{col_other}}"
-        f" {cost_color}{c_bold}{fmt_cost(grand_cost):>{col_cost}}{c_reset}"
+        f" {total_color}{c_bold}{fmt_cost(grand_cost):>{col_cost}}{c_reset}"
     )
     print()
 
