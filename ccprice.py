@@ -30,13 +30,23 @@ ANTHROPIC_PRICING = {
         "cache_read": 0.08,
         "cache_write": 1.0,
     },
+    # claude-3-haiku (original, cheaper) — distinct from claude-3-5-haiku / claude-haiku-4-x
+    "haiku3": {
+        "input": 0.25,
+        "output": 1.25,
+        "cache_read": 0.03,
+        "cache_write": 0.30,
+    },
 }
 
-# Model ID → pricing tier
+# Model ID → pricing tier (order matters: more specific patterns first)
 MODEL_PATTERNS = {
     "opus": ["opus"],
     "sonnet": ["sonnet"],
-    "haiku": ["haiku"],
+    # claude-3-5-haiku-*, claude-haiku-4-* → haiku tier ($0.80/$4.00)
+    "haiku": ["claude-3-5-haiku", "claude-haiku-4"],
+    # claude-3-haiku-* (original) → haiku3 tier ($0.25/$1.25)
+    "haiku3": ["haiku"],
 }
 
 
@@ -278,7 +288,7 @@ def scan_projects(
         total_anthropic_tokens = 0
         total_cost = 0.0
         tier_details = []
-        for tier in ["opus", "sonnet", "haiku"]:
+        for tier in ["opus", "sonnet", "haiku", "haiku3"]:
             if tier not in tier_usage:
                 continue
             u = tier_usage[tier]
