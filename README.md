@@ -30,7 +30,7 @@ Output is color-coded by cost: bright red ≥$500, red ≥$250, bright yellow �
 ## Features
 
 - **Auto-discovery** — scans all projects under `~/.claude/projects/`; new projects are picked up automatically
-- **Anthropic-only pricing** — calculates equivalent costs for Opus, Sonnet, and Haiku; other providers show token counts only
+- **Anthropic-only pricing** — calculates equivalent costs for 6 pricing tiers (Opus, Opus4.x, Sonnet, Haiku, Haiku3.5, Haiku3); other providers show token counts only
 - **Per-tier breakdown** — input, output, cache read, and cache write tokens with individual costs
 - **Time filtering** — `--since`/`--until` for rolling windows, `--at` for calendar-based windows
 - **Model filtering** — filter by Anthropic tier or substring match on any model ID
@@ -40,11 +40,14 @@ Output is color-coded by cost: bright red ≥$500, red ≥$250, bright yellow �
 
 ## Pricing Reference (USD per 1M tokens)
 
-| Model | Input | Output | Cache Read | Cache Write |
-|---|---|---|---|---|
-| Opus 4.6 | $15.00 | $75.00 | $1.50 | $18.75 |
-| Sonnet 4.6 | $3.00 | $15.00 | $0.30 | $3.75 |
-| Haiku 4.5 | $0.80 | $4.00 | $0.08 | $1.00 |
+| Tier | Models | Input | Output | Cache Read | Cache Write |
+|---|---|---|---|---|---|
+| Opus | 4.6, 4.5 | $5.00 | $25.00 | $0.50 | $6.25 |
+| Opus4.x | 4.1, 4, 3 | $15.00 | $75.00 | $1.50 | $18.75 |
+| Sonnet | 4.6, 4.5, 4, 3.7 | $3.00 | $15.00 | $0.30 | $3.75 |
+| Haiku | 4.5 | $1.00 | $5.00 | $0.10 | $1.25 |
+| Haiku3.5 | 3.5 | $0.80 | $4.00 | $0.08 | $1.00 |
+| Haiku3 | 3 | $0.25 | $1.25 | $0.03 | $0.30 |
 
 ## Install
 
@@ -135,7 +138,7 @@ ccprice --help             # full usage info
 1. Scans `~/.claude/projects/` for all project directories
 2. Reads `.jsonl` session transcript files
 3. Extracts `usage` from `assistant` message records
-4. Classifies models into Anthropic tiers (Opus / Sonnet / Haiku) or other
+4. Classifies models into Anthropic pricing tiers (Opus, Opus4.x, Sonnet, Haiku, Haiku3.5, Haiku3) or other
 5. Calculates equivalent API cost using current Anthropic pricing
 6. Outputs a formatted table or JSON
 

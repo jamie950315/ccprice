@@ -12,7 +12,15 @@ from datetime import datetime, timedelta, timezone
 
 # Anthropic pricing (USD per 1M tokens)
 ANTHROPIC_PRICING = {
+    # Opus 4.6, 4.5 — current pricing
     "opus": {
+        "input": 5.0,
+        "output": 25.0,
+        "cache_read": 0.50,
+        "cache_write": 6.25,
+    },
+    # Opus 4.1, 4, 3 — legacy pricing
+    "opus4": {
         "input": 15.0,
         "output": 75.0,
         "cache_read": 1.50,
@@ -24,13 +32,21 @@ ANTHROPIC_PRICING = {
         "cache_read": 0.30,
         "cache_write": 3.75,
     },
+    # Haiku 4.5
     "haiku": {
+        "input": 1.0,
+        "output": 5.0,
+        "cache_read": 0.10,
+        "cache_write": 1.25,
+    },
+    # Haiku 3.5
+    "haiku35": {
         "input": 0.80,
         "output": 4.0,
         "cache_read": 0.08,
         "cache_write": 1.0,
     },
-    # claude-3-haiku (original, cheaper) — distinct from claude-3-5-haiku / claude-haiku-4-x
+    # Haiku 3
     "haiku3": {
         "input": 0.25,
         "output": 1.25,
@@ -41,11 +57,16 @@ ANTHROPIC_PRICING = {
 
 # Model ID → pricing tier (order matters: more specific patterns first)
 MODEL_PATTERNS = {
-    "opus": ["opus"],
+    # Opus 4.6, 4.5 ($5/$25) — match before generic "opus"
+    "opus": ["claude-opus-4-6", "claude-opus-4-5"],
+    # Opus 4.1, 4, 3 ($15/$75)
+    "opus4": ["opus"],
     "sonnet": ["sonnet"],
-    # claude-3-5-haiku-*, claude-haiku-4-* → haiku tier ($0.80/$4.00)
-    "haiku": ["claude-3-5-haiku", "claude-haiku-4"],
-    # claude-3-haiku-* (original) → haiku3 tier ($0.25/$1.25)
+    # Haiku 4.5 ($1/$5) — match before generic "haiku"
+    "haiku": ["claude-haiku-4"],
+    # Haiku 3.5 ($0.80/$4)
+    "haiku35": ["claude-3-5-haiku"],
+    # Haiku 3 ($0.25/$1.25)
     "haiku3": ["haiku"],
 }
 
@@ -261,7 +282,7 @@ def scan_projects(
                         if model_filter:
                             mf = model_filter.lower()
                             if mf in ("opus", "sonnet", "haiku"):
-                                if tier != mf:
+                                if not tier or not tier.startswith(mf):
                                     continue
                             elif mf == "other":
                                 if tier is not None:
@@ -288,7 +309,7 @@ def scan_projects(
         total_anthropic_tokens = 0
         total_cost = 0.0
         tier_details = []
-        for tier in ["opus", "sonnet", "haiku", "haiku3"]:
+        for tier in ["opus", "opus4", "sonnet", "haiku", "haiku35", "haiku3"]:
             if tier not in tier_usage:
                 continue
             u = tier_usage[tier]
@@ -412,8 +433,10 @@ def print_summary(results: list[dict], filter_label: str = ""):
         )
 
         # Tier breakdown
+        tier_display = {"opus": "Opus", "opus4": "Opus4.x", "sonnet": "Sonnet",
+                        "haiku": "Haiku", "haiku35": "Haiku3.5", "haiku3": "Haiku3"}
         for td in r["tier_details"]:
-            tier_label = td["tier"].capitalize()
+            tier_label = tier_display.get(td["tier"], td["tier"].capitalize())
             detail = (
                 f"in:{fmt_tokens(td['input'])} "
                 f"out:{fmt_tokens(td['output'])} "

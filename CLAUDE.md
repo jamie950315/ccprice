@@ -25,7 +25,7 @@ Everything lives in `ccprice.py` (~466 lines). Key flow:
 
 1. **`main()`** — argparse CLI entry point
 2. **`scan_projects()`** — walks `~/.claude/projects/*/` reading `.jsonl` files, extracts `assistant` message usage records, applies time/model filters (since/until), accumulates per-tier token counts
-3. **`classify_model()`** — maps model IDs to pricing tiers (opus/sonnet/haiku) via `MODEL_PATTERNS`; skips non-Anthropic models
+3. **`classify_model()`** — maps model IDs to pricing tiers (opus/opus4/sonnet/haiku/haiku35/haiku3) via `MODEL_PATTERNS`; skips non-Anthropic models
 4. **`calc_cost()`** — computes API-equivalent cost from token counts × `ANTHROPIC_PRICING` rates
 5. **`print_summary()` / `print_json()`** — output formatting with 6-tier color-coded cost thresholds (bright red ≥$500, red ≥$250, bright yellow ≥$100, yellow ≥$50, green ≥$25, bright green <$25)
 
